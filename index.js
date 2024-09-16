@@ -1,38 +1,37 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const app = express();
 const twilio = require('twilio');
-const MessagingResponse = twilio.twiml.MessagingResponse;
 
+const app = express();
 const port = process.env.PORT || 3000;
 
-// Parse incoming requests
+// Parse incoming requests (x-www-form-urlencoded)
 app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
 
-// Twilio Webhook endpoint
-app.get('/whatsapp/webhook', (req, res) => {
-    const numMedia = req.body.NumMedia;
-    const twiml = new MessagingResponse();
+// Twilio webhook endpoint
+app.post('/whatsapp/webhook', (req, res) => {
+    const numMedia = req.body.NumMedia || 0;
+    const twiml = new twilio.twiml.MessagingResponse();
 
+    // Make sure to only respond once
     if (numMedia > 0) {
-        // If media is attached, get the Media URL from the request
+        // Handle media received
         const mediaUrl = req.body.MediaUrl0;
-        console.log('Received Media:', mediaUrl);
-
-        // Respond back with a message acknowledging receipt
-        const message = twiml.message('Thank you for the image!');
-        message.media(mediaUrl);  // Optionally send the image back
+        console.log(`Received media: ${mediaUrl}`);
+        twiml.message('Thanks for sending the image!');
     } else {
-        // Respond to text message
-        twiml.message('Hello! You sent a text message.');
+        // Handle text received
+        const message = req.body.Body;
+        console.log(`Received message: ${message}`);
+        twiml.message('Thanks for the message!');
     }
 
-    // Send the TwiML response back to Twilio
+    // Make sure we respond only once
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     res.end(twiml.toString());
 });
 
+// Start the server
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    console.log(`Express server running on port ${port}`);
 });
