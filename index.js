@@ -25,10 +25,11 @@ app.use(bodyParser.json());
 
 // Send WhatsApp notification
 app.post('/send-notification', async (req, res) => {
-    const { whatsappNumber } = req.body;
+    const whatsappNumber  = req.body.phoneNumber;
     const message = 'Please upload an image within the next 15 minutes.';
 
     try {
+        console.log(req.body);
         const response = await twilioClient.messages.create({
             body: message,
             from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
@@ -98,7 +99,7 @@ app.get('/whatsapp/images/:waId', async (req, res) => {
 
         const mediaUrls = [];
         mediaQuerySnapshot.forEach(doc => mediaUrls.push(...doc.data().mediaUrls));
-
+    console.log(mediaUrls);
         res.status(200).json({ urls: mediaUrls });
     } catch (error) {
         console.error('Error fetching media:', error);
