@@ -2,24 +2,45 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const admin = require('firebase-admin');
+require('dotenv').config(); // To load environment variables
 
 const app = express();
-const port = process.env.PORT || 5020;
+const port = process.env.PORT || 5000;
 
-// Parse incoming requests (x-www-form-urlencoded)
-app.use(bodyParser.urlencoded({ extended: false }));
-
-// Load the Firebase Admin SDK credentials
+// Initialize Firebase Admin
 const serviceAccount = require('./firebase-adminsdk.json');
-
-// Initialize the Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://whatsappimageattachment.firebaseio.com" 
+    databaseURL: process.env.FIREBASE_DATABASE_URL
 });
 
-// Initialize Firestore
 const db = admin.firestore();
+
+// Initialize Twilio
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+// Parse incoming requests
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+// Send WhatsApp notification
+app.post('/send-notification', async (req, res) => {
+    const { whatsappNumber } = req.body;
+    const message = 'Please upload an image within the next 15 minutes.';
+
+    try {
+        const response = await twilioClient.messages.create({
+            body: message,
+            from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+            to: `whatsapp:${whatsappNumber}`
+        });
+
+        res.status(200).send({ message: 'Notification sent successfully', sid: response.sid });
+    } catch (error) {
+        console.error('Error sending notification:', error);
+        res.status(500).send({ error: 'Failed to send notification' });
+    }
+});
 
 // Twilio webhook endpoint
 app.post('/whatsapp/webhook', async (req, res) => {
@@ -62,18 +83,13 @@ app.post('/whatsapp/webhook', async (req, res) => {
     res.end(twiml.toString());
 });
 
-// Start the server
-app.listen(port, () => {
-    console.log(`Express server running on port ${port}`);
-});
-
-
-// Route to fetch the recent 5 images for a given WaId
+// Fetch the most recent 5 images for a given WaId
 app.get('/whatsapp/images/:waId', async (req, res) => {
-    const senderWaId = req.params.waId;
+    let senderWaId = req.params.waId;
 
     try {
-        // Query Firestore for the 5 most recent media URLs from the given WaId
+        senderWaId = senderWaId.slice(1);
+        console.log(senderWaId);
         const mediaQuerySnapshot = await db.collection('whatsappMedia')
             .where('senderWaId', '==', senderWaId)
             .orderBy('uploadedAt', 'desc')
@@ -81,19 +97,15 @@ app.get('/whatsapp/images/:waId', async (req, res) => {
             .get();
 
         const mediaUrls = [];
-        mediaQuerySnapshot.forEach((doc) => {
-            mediaUrls.push(doc.data().mediaUrls);
-        });
+        mediaQuerySnapshot.forEach(doc => mediaUrls.push(...doc.data().mediaUrls));
 
-        if (mediaUrls.length > 0) {
-            // Flatten the array in case each entry has multiple media URLs
-            const flattenedUrls = [].concat(...mediaUrls);
-            res.status(200).json({ urls: flattenedUrls });
-        } else {
-            res.status(404).send('No media found for this WaId');
-        }
+        res.status(200).json({ urls: mediaUrls });
     } catch (error) {
-        console.error('Error fetching media URLs:', error);
-        res.status(500).send('Error fetching media URLs');
+        console.error('Error fetching media:', error);
+        res.status(500).send('Error fetching media.');
     }
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
